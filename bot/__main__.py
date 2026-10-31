@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import threading
@@ -6,6 +7,48 @@ from urllib.parse import urlparse
 
 from .screenshotbot import ScreenShotBot
 from .config import Config
+
+
+BOT_CLIENT = None
+
+
+async def download_message_media(chat_id, message_id):
+    if BOT_CLIENT is None:
+        raise RuntimeError("Telegram client is not initialized")
+
+    message = await BOT_CLIENT.get_messages(chat_id, message_id)
+    if message.empty or not message.media:
+        return None, None, None
+
+    file_name = getattr(message, "file_name", None) or f"{chat_id}_{message_id}"
+    mime_type = None
+    if getattr(message, "document", None) is not None:
+        mime_type = message.document.mime_type or "application/octet-stream"
+    elif getattr(message, "video", None) is not None:
+        mime_type = message.video.mime_type or "video/mp4"
+    elif getattr(message, "audio", None) is not None:
+        mime_type = message.audio.mime_type or "audio/mpeg"
+    elif getattr(message, "photo", None) is not None:
+        mime_type = "image/jpeg"
+    else:
+        mime_type = "application/octet-stream"
+
+    media = await message.download(in_memory=True)
+    if media is None:
+        return None, None, None
+
+    if isinstance(media, (bytes, bytearray)):
+        data = bytes(media)
+    elif hasattr(media, "read"):
+        data = media.read()
+    elif isinstance(media, str):
+        with open(media, "rb") as fp:
+            data = fp.read()
+        os.remove(media)
+    else:
+        data = bytes(media)
+
+    return data, file_name, mime_type
 
 
 class HealthHandler(BaseHTTPRequestHandler):
@@ -22,17 +65,36 @@ class HealthHandler(BaseHTTPRequestHandler):
             return
 
         if path.startswith("/file/"):
-            body = (
-                b"This Render app is only a health endpoint. "
-                b"It is not a Telegram file-streaming host. "
-                b"Set HOST to a real file-serving service or a TgFileStream-compatible endpoint."
-            )
-            self.send_response(501)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            return
+            try:
+                parts = path.strip("/").split("/")
+                if len(parts) >= 3 and parts[0] == "file":
+                    chat_id = int(parts[1])
+                    message_id = int(parts[2])
+                    data, file_name, mime_type = asyncio.run(
+                        download_message_media(chat_id, message_id)
+                    )
+                    if data is None:
+                        raise ValueError("Media not found")
+
+                    self.send_response(200)
+                    self.send_header("Content-Type", mime_type or "application/octet-stream")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.send_header(
+                        "Content-Disposition",
+                        f'inline; filename="{file_name or "media"}"',
+                    )
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
+            except Exception as exc:
+                logging.exception("Failed to serve file for %s", self.path)
+                body = str(exc).encode()
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
 
         self.send_response(404)
         self.end_headers()
@@ -53,7 +115,10 @@ if __name__ == "__main__":
         logging.INFO if Config.DEBUG else logging.WARNING
     )
 
+    global BOT_CLIENT
+    BOT_CLIENT = ScreenShotBot()
+
     health_thread = threading.Thread(target=run_health_server, daemon=True)
     health_thread.start()
 
-    ScreenShotBot().run()
+    BOT_CLIENT.run()
