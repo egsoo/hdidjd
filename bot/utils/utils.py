@@ -74,7 +74,7 @@ class Utilities:
 
     @staticmethod
     def generate_stream_link(media_msg):
-        file_id = media_msg.message_id
+        file_id = media_msg.id
         chat_id = media_msg.chat.id
         return urljoin(Config.HOST, f"file/{chat_id}/{file_id}")
 
@@ -200,26 +200,24 @@ class Utilities:
         x_pad = round((width * x_fact) / 100)
         y_pad = round((x_pad * a_ratio[1]) / a_ratio[0])
 
-        # https://superuser.com/questions/939357/how-to-position-drawtext-text
-
         if pos == 0:
-            return x_pad, y_pad  # top left
+            return x_pad, y_pad
         elif pos == 1:
-            return "(w-text_w)/2", f"{y_pad}"  # top center
+            return "(w-text_w)/2", f"{y_pad}"
         elif pos == 2:
-            return f"w-tw-{x_pad}", f"{y_pad}"  # top right
+            return f"w-tw-{x_pad}", f"{y_pad}"
         elif pos == 3:
-            return x_pad, "(h-text_h)/2"  # center left
+            return x_pad, "(h-text_h)/2"
         elif pos == 4:
-            return "(w-text_w)/2", "(h-text_h)/2"  # centered
+            return "(w-text_w)/2", "(h-text_h)/2"
         elif pos == 5:
-            return f"w-tw-{x_pad}", "(h-text_h)/2"  # center right
+            return f"w-tw-{x_pad}", "(h-text_h)/2"
         elif pos == 6:
-            return x_pad, f"h-th-{y_pad}"  # bottom left
+            return x_pad, f"h-th-{y_pad}"
         elif pos == 7:
-            return "(w-text_w)/2", f"h-th-{y_pad}"  # bottom center
+            return "(w-text_w)/2", f"h-th-{y_pad}"
         else:
-            return f"w-tw-{x_pad}", f"h-th-{y_pad}"  # bottom right
+            return f"w-tw-{x_pad}", f"h-th-{y_pad}"
 
     @staticmethod
     async def display_settings(c, m, db, cb=False):
