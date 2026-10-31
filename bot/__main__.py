@@ -115,7 +115,6 @@ if __name__ == "__main__":
         logging.INFO if Config.DEBUG else logging.WARNING
     )
 
-    global BOT_CLIENT
     BOT_CLIENT = ScreenShotBot()
 
     health_thread = threading.Thread(target=run_health_server, daemon=True)
