@@ -17,36 +17,33 @@ async def download_message_media(chat_id, message_id):
         raise RuntimeError("Telegram client is not initialized")
 
     message = await BOT_CLIENT.get_messages(chat_id, message_id)
-    if message.empty or not message.media:
+    if message is None or message.empty or not message.media:
         return None, None, None
 
     file_name = getattr(message, "file_name", None) or f"{chat_id}_{message_id}"
-    mime_type = None
-    if getattr(message, "document", None) is not None:
-        mime_type = message.document.mime_type or "application/octet-stream"
-    elif getattr(message, "video", None) is not None:
+    mime_type = "application/octet-stream"
+
+    if getattr(message, "video", None) is not None:
         mime_type = message.video.mime_type or "video/mp4"
+    elif getattr(message, "document", None) is not None:
+        mime_type = message.document.mime_type or "application/octet-stream"
     elif getattr(message, "audio", None) is not None:
         mime_type = message.audio.mime_type or "audio/mpeg"
     elif getattr(message, "photo", None) is not None:
         mime_type = "image/jpeg"
-    else:
-        mime_type = "application/octet-stream"
 
-    media = await message.download(in_memory=True)
-    if media is None:
+    file_path = await message.download(in_memory=False)
+    if not file_path:
         return None, None, None
 
-    if isinstance(media, (bytes, bytearray)):
-        data = bytes(media)
-    elif hasattr(media, "read"):
-        data = media.read()
-    elif isinstance(media, str):
-        with open(media, "rb") as fp:
+    try:
+        with open(file_path, "rb") as fp:
             data = fp.read()
-        os.remove(media)
-    else:
-        data = bytes(media)
+    finally:
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
 
     return data, file_name, mime_type
 
@@ -101,10 +98,10 @@ class HealthHandler(BaseHTTPRequestHandler):
                     except (BrokenPipeError, ConnectionResetError, OSError):
                         pass
                     return
-            except Exception as exc:
+            except Exception:
+                logging.exception("Failed to serve file for %s", self.path)
+                body = b"File not found or not accessible"
                 try:
-                    logging.exception("Failed to serve file for %s", self.path)
-                    body = str(exc).encode()
                     self.send_response(404)
                     self.send_header("Content-Type", "text/plain; charset=utf-8")
                     self.send_header("Content-Length", str(len(body)))
