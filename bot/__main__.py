@@ -52,16 +52,26 @@ async def download_message_media(chat_id, message_id):
 
 
 class HealthHandler(BaseHTTPRequestHandler):
+    def _safe_write(self, payload: bytes):
+        try:
+            if payload:
+                self.wfile.write(payload)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+
     def do_GET(self):
         path = urlparse(self.path).path
 
         if path in ("/", "/health", "/healthz"):
             body = b"OK"
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self._safe_write(body)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
             return
 
         if path.startswith("/file/"):
@@ -76,28 +86,39 @@ class HealthHandler(BaseHTTPRequestHandler):
                     if data is None:
                         raise ValueError("Media not found")
 
-                    self.send_response(200)
-                    self.send_header("Content-Type", mime_type or "application/octet-stream")
-                    self.send_header("Content-Length", str(len(data)))
-                    self.send_header(
-                        "Content-Disposition",
-                        f'inline; filename="{file_name or "media"}"',
-                    )
-                    self.end_headers()
-                    self.wfile.write(data)
+                    try:
+                        self.send_response(200)
+                        self.send_header(
+                            "Content-Type", mime_type or "application/octet-stream"
+                        )
+                        self.send_header("Content-Length", str(len(data)))
+                        self.send_header(
+                            "Content-Disposition",
+                            f'inline; filename="{file_name or "media"}"',
+                        )
+                        self.end_headers()
+                        self._safe_write(data)
+                    except (BrokenPipeError, ConnectionResetError, OSError):
+                        pass
                     return
             except Exception as exc:
-                logging.exception("Failed to serve file for %s", self.path)
-                body = str(exc).encode()
-                self.send_response(404)
-                self.send_header("Content-Type", "text/plain; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+                try:
+                    logging.exception("Failed to serve file for %s", self.path)
+                    body = str(exc).encode()
+                    self.send_response(404)
+                    self.send_header("Content-Type", "text/plain; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self._safe_write(body)
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    pass
                 return
 
-        self.send_response(404)
-        self.end_headers()
+        try:
+            self.send_response(404)
+            self.end_headers()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
 
     def log_message(self, format, *args):
         return
