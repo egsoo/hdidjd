@@ -2,6 +2,7 @@ import logging
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse
 
 from .screenshotbot import ScreenShotBot
 from .config import Config
@@ -9,9 +10,24 @@ from .config import Config
 
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path in ("/", "/health", "/healthz"):
+        path = urlparse(self.path).path
+
+        if path in ("/", "/health", "/healthz"):
             body = b"OK"
             self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        if path.startswith("/file/"):
+            body = (
+                b"This Render app is only a health endpoint. "
+                b"It is not a Telegram file-streaming host. "
+                b"Set HOST to a real file-serving service or a TgFileStream-compatible endpoint."
+            )
+            self.send_response(501)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
